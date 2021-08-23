@@ -104,9 +104,8 @@ logs_ui <- function(id, lan = NULL) {
 #'  bb_x_axis bb_zoom %>% bb_bar_color_manual
 #' @importFrom shiny reactiveValues observe req updateSelectInput updateDateRangeInput reactiveVal outputOptions
 #' @importFrom utils write.table
-logs <- function(input, output, session, sqlite_path, passphrase, 
-                 fileEncoding = "", lan = NULL) {
-
+logs <- function(input, output, session, fileEncoding = "", lan = NULL) {
+  passphrase = .tok$get_passphrase()
   ns <- session$ns
   jns <- function(x) {
     paste0("#", ns(x))
@@ -116,8 +115,8 @@ logs <- function(input, output, session, sqlite_path, passphrase,
   print_app_input <- reactiveVal(FALSE)
 
   observe({
-    conn <- dbConnect(SQLite(), dbname = sqlite_path)
-    on.exit(dbDisconnect(conn))
+    conn = get_conn()
+    on.exit(close_conn(conn))
     logs_rv$logs <- read_db_decrypt(conn = conn, name = "logs", passphrase = passphrase)
 
     isolate({
@@ -272,8 +271,8 @@ logs <- function(input, output, session, sqlite_path, passphrase,
       paste('shinymanager-logs-', Sys.Date(), '.csv', sep = '')
     },
     content = function(con) {
-      conn <- dbConnect(SQLite(), dbname = sqlite_path)
-      on.exit(dbDisconnect(conn))
+      conn = get_conn()
+      on.exit(close_conn(conn))
       logs <- read_db_decrypt(conn = conn, name = "logs", passphrase = passphrase)
       # treat old bad admin log
       if(any(duplicated(logs$token))){

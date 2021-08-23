@@ -3,6 +3,10 @@ is_sqlite <- function(path) {
   is.character(path) && file.exists(path) && grepl(pattern = "\\.sqlite$", x = path)
 }
 
+is_dbi <- function(con) {
+  inherits(con, "DBIConnection")
+}
+
 hasName <- function(x, name) {
   match(name, names(x), nomatch = 0L) > 0L
 }
@@ -17,6 +21,34 @@ get_args <- function(..., fun) {
   args[names(args) %in% args_fun]
 }
 
+# Check whether the backend is a SQL or SQLite database
+is_database <- function() {
+  return(!is.null(.tok$get_sqlite_path()) | !is.null(.tok$get_dbi_con()))
+}
+
+#' @importFrom RSQLite SQLite
+#' @importFrom DBI dbConnect
+get_conn <- function() {
+  conn = NULL
+  sqlite_path <- .tok$get_sqlite_path()
+  dbi_conn = .tok$get_dbi_con()
+  if (!is.null(sqlite_path)) {
+    conn <- dbConnect(SQLite(), dbname = sqlite_path)
+  } else if (!is.null(.tok$get_dbi_con())) {
+    conn = dbi_conn
+  }
+  return(conn)
+}
+
+#' Close the connection if it's an SQLite connection
+#' @importFrom DBI dbDisconnect
+close_conn <- function(conn) {
+  sqlite_path <- .tok$get_sqlite_path()
+  if (!is.null(sqlite_path)) {
+    dbDisconnect(conn)
+  }
+}
+
 #' @importFrom R.utils capitalize
 make_title <- function(x) {
   capitalize(gsub(
@@ -29,15 +61,13 @@ dropFalse <- function(x) {
   x[!vapply(x, isFALSE, FUN.VALUE = logical(1))]
 }
 
-#' @importFrom DBI dbConnect dbDisconnect
 #' @importFrom RSQLite SQLite
 is_force_chg_pwd <- function(token) {
   user_info <- .tok$get(token)
-  sqlite_path <- .tok$get_sqlite_path()
+  conn = get_conn()
+  on.exit(close_conn(conn))
   passphrase <- .tok$get_passphrase()
-  if (!is.null(sqlite_path)) {
-    conn <- dbConnect(SQLite(), dbname = sqlite_path)
-    on.exit(dbDisconnect(conn))
+  if (!is.null(conn)) {
     resetpwd <- read_db_decrypt(conn, name = "pwd_mngt", passphrase = passphrase)
     ind_user <- resetpwd$user %in% user_info$user
     identical(resetpwd$must_change[ind_user], "TRUE")
@@ -46,14 +76,12 @@ is_force_chg_pwd <- function(token) {
   }
 }
 
-#' @importFrom DBI dbConnect dbDisconnect
 #' @importFrom RSQLite SQLite
 force_chg_pwd <- function(user, change = TRUE) {
-  sqlite_path <- .tok$get_sqlite_path()
+  conn = get_conn()
+  on.exit(close_conn(conn))
   passphrase <- .tok$get_passphrase()
-  if (!is.null(sqlite_path)) {
-    conn <- dbConnect(SQLite(), dbname = sqlite_path)
-    on.exit(dbDisconnect(conn))
+  if (!is.null(conn)) {
     resetpwd <- read_db_decrypt(conn, name = "pwd_mngt", passphrase = passphrase)
     ind_user <- resetpwd$user %in% user
     resetpwd$must_change[ind_user] <- change
@@ -65,14 +93,12 @@ force_chg_pwd <- function(user, change = TRUE) {
   }
 }
 
-#' @importFrom DBI dbConnect dbDisconnect
 #' @importFrom RSQLite SQLite
 update_pwd <- function(user, pwd) {
-  sqlite_path <- .tok$get_sqlite_path()
+  conn = get_conn()
+  on.exit(close_conn(conn))
   passphrase <- .tok$get_passphrase()
-  if (!is.null(sqlite_path)) {
-    conn <- dbConnect(SQLite(), dbname = sqlite_path)
-    on.exit(dbDisconnect(conn))
+  if (!is.null(conn)) {
     res_pwd <- try({
       users <- read_db_decrypt(conn, name = "credentials", passphrase = passphrase)
       ind_user <- users$user %in% user
@@ -97,15 +123,13 @@ update_pwd <- function(user, pwd) {
 }
 
 
-#' @importFrom DBI dbConnect dbDisconnect
 #' @importFrom RSQLite SQLite
 save_logs <- function(token) {
-  sqlite_path <- .tok$get_sqlite_path()
+  conn = get_conn()
+  on.exit(close_conn(conn))
   passphrase <- .tok$get_passphrase()
   user <- .tok$get_user(token)
-  if (!is.null(sqlite_path)) {
-    conn <- dbConnect(SQLite(), dbname = sqlite_path)
-    on.exit(dbDisconnect(conn))
+  if (!is.null(conn)) {
     res_logs <- try({
       logs <- read_db_decrypt(conn = conn, name = "logs", passphrase = passphrase)
       # patch for old logs database
@@ -145,11 +169,10 @@ save_logs <- function(token) {
 }
 
 save_logs_failed <- function(user, status = "Failed") {
-  sqlite_path <- .tok$get_sqlite_path()
+  conn = get_conn()
+  on.exit(close_conn(conn))
   passphrase <- .tok$get_passphrase()
-  if (!is.null(sqlite_path)) {
-    conn <- dbConnect(SQLite(), dbname = sqlite_path)
-    on.exit(dbDisconnect(conn))
+  if (!is.null(conn)) {
     res_logs <- try({
       logs <- read_db_decrypt(conn = conn, name = "logs", passphrase = passphrase)
       # patch for old logs database
@@ -180,14 +203,12 @@ save_logs_failed <- function(user, status = "Failed") {
   }
 }
 
-#' @importFrom DBI dbConnect dbDisconnect
 #' @importFrom RSQLite SQLite
 logout_logs <- function(token) {
-  sqlite_path <- .tok$get_sqlite_path()
+  conn = get_conn()
+  on.exit(close_conn(conn))
   passphrase <- .tok$get_passphrase()
-  if (!is.null(sqlite_path)) {
-    conn <- dbConnect(SQLite(), dbname = sqlite_path)
-    on.exit(dbDisconnect(conn))
+  if (!is.null(conn)) {
     res_logs <- try({
       logs <- read_db_decrypt(conn = conn, name = "logs", passphrase = passphrase)
       logs$logout[logs$token  %in% token] <- as.character(Sys.time())

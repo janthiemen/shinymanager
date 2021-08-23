@@ -73,15 +73,21 @@
 check_credentials <- function(db, passphrase = NULL) {
   if (is.data.frame(db)) {
     .tok$set_sqlite_path(NULL)
+    .tok$set_dbi_con(NULL)
     function(user, password) {
       check_credentials_df(user, password, credentials_df = db)
     }
   } else if (is_sqlite(db)) {
     .tok$set_sqlite_path(db)
+    .tok$set_dbi_con(NULL)
     .tok$set_passphrase(passphrase)
     check_credentials_sqlite(sqlite_path = db, passphrase = passphrase)
+  } else if (is_dbi(db)) {
+    .tok$set_sqlite_path(NULL)
+    .tok$set_dbi_con(db)
+    check_credentials_dbi(con = db)
   } else {
-    stop("'db' must be a data.frame or a path to a SQLite database", call. = FALSE)
+    stop("'db' must be a data.frame, DBI object or a path to a SQLite database", call. = FALSE)
   }
 }
 
@@ -161,12 +167,18 @@ check_credentials_df <- function(user, password, credentials_df) {
 
 check_credentials_sqlite <- function(sqlite_path, passphrase) {
   conn <- dbConnect(SQLite(), dbname = sqlite_path)
-  on.exit(dbDisconnect(conn))
   db <- read_db_decrypt(
     conn = conn,
     name = "credentials",
     passphrase = passphrase
   )
+  function(user, password) {
+    check_credentials_df(user, password, credentials_df = db)
+  }
+}
+
+check_credentials_dbi <- function(conn) {
+  db <- dbReadTable(conn = conn, name = "credentials")
   function(user, password) {
     check_credentials_df(user, password, credentials_df = db)
   }

@@ -3,12 +3,23 @@
 #' @importFrom DT DTOutput
 #' @importFrom htmltools tags singleton tagList
 #' @importFrom shiny NS fluidRow column actionButton icon
-admin_ui <- function(id, lan = NULL) {
+admin_ui <- function(id, lan = NULL, enable_download=TRUE) {
   
   ns <- NS(id)
   
   if(is.null(lan)){
     lan <- use_language()
+  }
+
+  if (enable_download) {
+    download_button = downloadButton(
+          outputId = ns("download_sql_database"),
+          label = lan$get("Download SQL database"),
+          class = "btn-primary center-block",
+          icon = icon("download")
+    )
+  } else {
+    download_button = tags$span()
   }
   
   tagList(
@@ -88,14 +99,9 @@ admin_ui <- function(id, lan = NULL) {
         ),
         
         tags$br(),tags$br(), tags$br(), tags$hr(),
-        
-        downloadButton(
-          outputId = ns("download_sql_database"),
-          label = lan$get("Download SQL database"),
-          class = "btn-primary center-block",
-          icon = icon("download")
-        ),
-        
+
+        download_button,
+
         tags$br(),tags$br()
         
       )
@@ -108,9 +114,9 @@ admin_ui <- function(id, lan = NULL) {
 #'  removeUI insertUI reactiveValues showNotification callModule req updateCheckboxInput
 #' @importFrom DBI dbConnect
 #' @importFrom RSQLite SQLite
-admin <- function(input, output, session, sqlite_path, passphrase, lan,
-                  inputs_list = NULL, max_users = NULL) {
-  
+admin <- function(input, output, session, lan, inputs_list = NULL, max_users = NULL) {
+  sqlite_path = .tok$get_sqlite_path()
+  passphrase = .tok$get_passphrase()
   ns <- session$ns
   jns <- function(x) {
     paste0("#", ns(x))
@@ -126,10 +132,11 @@ admin <- function(input, output, session, sqlite_path, passphrase, lan,
   observe({
     update_read_db$x
     db <- try({
-      conn <- dbConnect(SQLite(), dbname = sqlite_path)
-      on.exit(dbDisconnect(conn))
+      conn = get_conn()
+      on.exit(close_conn(conn))
       read_db_decrypt(conn = conn, name = "credentials", passphrase = passphrase)
     }, silent = TRUE)
+
     if (inherits(db, "try-error")) {
       showModal(modalDialog("An error occurs when connecting or reading the database."))
       users(NULL)
@@ -139,19 +146,21 @@ admin <- function(input, output, session, sqlite_path, passphrase, lan,
   })
   
   # prevent bug having multiple admin session
-  users_update <- reactiveFileReader(1000, session, sqlite_path, filelReaderDB,  passphrase = passphrase, name = "credentials")
-  observe({
-    if(!is.null(users_update())) users(users_update())
-  })
-  
+  if (!is.null(sqlite_path)) {
+    # TODO: This currently only works for SQLite, we want to prevent this issue in other databases as well
+    users_update <- reactiveFileReader(1000, session, sqlite_path, filelReaderDB,  passphrase = passphrase, name = "credentials")
+    observe({
+      if(!is.null(users_update())) users(users_update())
+    })
+  }
   # read password management table from database
   pwds <- reactiveVal(NULL)
   
   observe({
     update_read_db$x
     db <- try({
-      conn <- dbConnect(SQLite(), dbname = sqlite_path)
-      on.exit(dbDisconnect(conn))
+      conn = get_conn()
+      on.exit(close_conn(conn))
       read_db_decrypt(conn = conn, name = "pwd_mngt", passphrase = passphrase)
     }, silent = TRUE)
     if (inherits(db, "try-error")) {
@@ -163,11 +172,12 @@ admin <- function(input, output, session, sqlite_path, passphrase, lan,
   })
   
   # prevent bug having multiple admin session
-  pwds_update <- reactiveFileReader(1000, session, sqlite_path, filelReaderDB,  passphrase = passphrase, name = "pwd_mngt")
-  observe({
-    if(!is.null(pwds_update())) pwds(pwds_update())
-  })
-  
+  if (!is.null(sqlite_path)) {
+    pwds_update <- reactiveFileReader(1000, session, sqlite_path, filelReaderDB,  passphrase = passphrase, name = "pwd_mngt")
+    observe({
+      if(!is.null(pwds_update())) pwds(pwds_update())
+    })
+  }
   
   # displaying users table
   output$table_users <- renderDT({
@@ -306,8 +316,8 @@ admin <- function(input, output, session, sqlite_path, passphrase, lan,
     users <- users[!users$user %in% to_delete, , drop = FALSE]
     pwds <- pwds()
     pwds <- pwds[!pwds$user %in% to_delete, , drop = FALSE]
-    conn <- dbConnect(SQLite(), dbname = sqlite_path)
-    on.exit(dbDisconnect(conn))
+    conn = get_conn()
+    on.exit(close_conn(conn))    
     write_db_encrypt(conn = conn, value = users, name = "credentials", passphrase = passphrase)
     write_db_encrypt(conn = conn, value = pwds, name = "pwd_mngt", passphrase = passphrase)
     update_read_db$x <- Sys.time()
@@ -394,9 +404,9 @@ admin <- function(input, output, session, sqlite_path, passphrase, lan,
     users <- users()
     pwds <- pwds()
     newval <- value_edited$user
-    conn <- dbConnect(SQLite(), dbname = sqlite_path)
-    on.exit(dbDisconnect(conn))
-    
+    conn = get_conn()
+    on.exit(close_conn(conn))
+
     res_edit <- try({
       users <- update_user(users, newval, input$edit_user)
       write_db_encrypt(conn = conn, value = users, name = "credentials", passphrase = passphrase)
@@ -440,8 +450,8 @@ admin <- function(input, output, session, sqlite_path, passphrase, lan,
     users <- users()
     newval <- value_mult_edited$user
     newval$user <- newval$admin <- NULL
-    conn <- dbConnect(SQLite(), dbname = sqlite_path)
-    on.exit(dbDisconnect(conn))
+    conn = get_conn()
+    on.exit(close_conn(conn))
     res_edit <- try({
       for (user in r_selected_users()) {
         users <- update_user(users, newval, user)
@@ -522,9 +532,8 @@ admin <- function(input, output, session, sqlite_path, passphrase, lan,
     } else {
       must_change <- as.character(TRUE)
     }
-    conn <- dbConnect(SQLite(), dbname = sqlite_path)
-    on.exit(dbDisconnect(conn))
-    
+    conn = get_conn()
+    on.exit(close_conn(conn))
     # password <- generate_pwd()
     # newuser$password <- password
     res_add <- try({
@@ -595,7 +604,9 @@ admin <- function(input, output, session, sqlite_path, passphrase, lan,
     } else {
       users$is_hashed_password[users$user %in% input$reset_pwd] <- FALSE
     }
-    write_db_encrypt(conn = sqlite_path, value = users, name = "credentials", passphrase = passphrase)
+    conn = get_conn()
+    on.exit(close_conn(conn))
+    write_db_encrypt(conn = conn, value = users, name = "credentials", passphrase = passphrase)
     res_chg <- try(force_chg_pwd(input$reset_pwd), silent = TRUE)
     if (inherits(res_chg, "try-error")) {
       showNotification(ui = lan()$get("Failed to update user"), type = "error")
@@ -630,8 +641,8 @@ admin <- function(input, output, session, sqlite_path, passphrase, lan,
     users <- users[!users$user %in% input$remove_user, , drop = FALSE]
     pwds <- pwds()
     pwds <- pwds[!pwds$user %in% input$remove_user, , drop = FALSE]
-    conn <- dbConnect(SQLite(), dbname = sqlite_path)
-    on.exit(dbDisconnect(conn))
+    conn = get_conn()
+    on.exit(close_conn(conn))
     write_db_encrypt(conn = conn, value = users, name = "credentials", passphrase = passphrase)
     write_db_encrypt(conn = conn, value = pwds, name = "pwd_mngt", passphrase = passphrase)
     update_read_db$x <- Sys.time()

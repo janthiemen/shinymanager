@@ -170,8 +170,8 @@ unbindDT <- function(id, session = getDefaultReactiveDomain()) {
 }
 
 filelReaderDB <- function(sqlite_path, passphrase, name){
-  conn <- dbConnect(SQLite(), dbname = sqlite_path)
-  on.exit(dbDisconnect(conn))
+  conn = get_conn()
+  on.exit(close_conn(conn))
   tryCatch(read_db_decrypt(conn = conn, name = name, passphrase = passphrase), 
            error = function(e) NULL)
 }

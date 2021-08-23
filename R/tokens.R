@@ -68,6 +68,13 @@
     reset_count = function(token) {
       private$tokens_count <- setdiff(private$tokens_count, token)
     },
+    set_dbi_con = function(con) {
+      private$dbi_con <- con
+      invisible(private$dbi_con)
+    },
+    get_dbi_con = function() {
+      private$dbi_con
+    },
     set_sqlite_path = function(path) {
       private$sqlite_path <- path
       invisible(private$sqlite_path)
@@ -95,6 +102,7 @@
     tokens_count = character(0),
     tokens_user = list(),
     sqlite_path = NULL,
+    dbi_con = NULL,
     passphrase = NULL,
     timeout = 0,
     length = function() base::length(private$tokens)

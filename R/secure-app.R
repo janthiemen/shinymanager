@@ -69,7 +69,7 @@ secure_app <- function(ui,
         )
         return(pwd_ui)
       }
-      if (isTRUE(enable_admin) && .tok$is_admin(token) & identical(admin, "true") & !is.null(.tok$get_sqlite_path())) {
+      if (isTRUE(enable_admin) && .tok$is_admin(token) & identical(admin, "true") & is_database()) {
         navbarPage(
           title = "Admin",
           theme = theme,
@@ -93,7 +93,7 @@ secure_app <- function(ui,
           tabPanel(
             title = tagList(icon("home"), lan$get("Home")),
             value = "home",
-            admin_ui("admin", lan),
+            admin_ui("admin", lan, is_sqlite(.tok$get_sqlite_path())),
             shinymanager_language(lan$get_language())
           ),
           tabPanel(
@@ -103,7 +103,7 @@ secure_app <- function(ui,
           )
         )
       } else {
-        if (isTRUE(enable_admin) && .tok$is_admin(token) && !is.null(.tok$get_sqlite_path())) {
+        if (isTRUE(enable_admin) && .tok$is_admin(token) && is_database()) {
           menu <- fab_button(
             position = fab_position,
             actionButton(
@@ -118,7 +118,7 @@ secure_app <- function(ui,
             )
           )
         } else {
-          if (isTRUE(enable_admin) && .tok$is_admin(token) && is.null(.tok$get_sqlite_path())) {
+          if (isTRUE(enable_admin) && .tok$is_admin(token) && is_database()) {
             warning("Admin mode is only available when using a SQLite database!", call. = FALSE)
           }
           menu <- fab_button(
@@ -250,13 +250,10 @@ secure_server <- function(check_credentials,
 
   .tok$set_timeout(timeout)
 
-  path_sqlite <- .tok$get_sqlite_path()
-  if (!is.null(path_sqlite)) {
+  if (is_database()) {
     callModule(
       module = admin,
       id = "admin",
-      sqlite_path = path_sqlite,
-      passphrase = .tok$get_passphrase(),
       inputs_list = inputs_list,
       max_users = max_users,
       lan = lan
@@ -264,8 +261,6 @@ secure_server <- function(check_credentials,
     callModule(
       module = logs,
       id = "logs",
-      sqlite_path = path_sqlite,
-      passphrase = .tok$get_passphrase(),
       fileEncoding = fileEncoding,
       lan = lan
     )

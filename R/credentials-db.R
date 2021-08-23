@@ -1,7 +1,7 @@
 
 #' @title Create credentials database
 #'
-#' @description Create a SQLite database with credentials data protected by a password.
+#' @description Create a SQLite database with credentials data protected by a password. This is a wrapper around the create_db method that will create a SQLite connection for you.
 #'
 #' @param credentials_data A \code{data.frame} with information about users, \code{user} and \code{password} are required.
 #' @param sqlite_path Path to the SQLite database.
@@ -44,14 +44,73 @@
 #' key_set("R-shinymanager-key", "obiwankenobi")
 #'
 #' # Create the database
-#' create_db(
+#' create_db_sqlite(
 #'   credentials_data = credentials,
 #'   sqlite_path = "path/to/database.sqlite", # will be created
 #'   passphrase = key_get("R-shinymanager-key", "obiwankenobi")
 #' )
 #'
 #' }
-create_db <- function(credentials_data, sqlite_path, passphrase = NULL) {
+create_db_sqlite <- function(credentials_data, sqlite_path, passphrase = NULL) {
+  conn <- dbConnect(SQLite(), dbname = sqlite_path)
+  on.exit(dbDisconnect(conn))
+  create_db(conn, passphrase)
+}
+
+#' @title Create credentials database on a DBI connection
+#'
+#' @description Create a database with credentials data protected by a password. This can be any SQL database.
+#'
+#' @param credentials_data A \code{data.frame} with information about users, \code{user} and \code{password} are required.
+#' @param conn A \code{DBIConnection} to a database..
+#' @param passphrase A password to protect the data inside the database.
+#'
+#' @export
+#'
+#' @details The credentials \code{data.frame} can have the following columns:
+#'  \itemize{
+#'   \item \strong{user (mandatory)} : the user's name.
+#'   \item \strong{password (mandatory)} : the user's password.
+#'   \item \strong{admin (optional)} : logical, is user have admin right ? If so,
+#'    user can access the admin mode (only available using a SQLite database)
+#'   \item \strong{start (optional)} : the date from which the user will have access to the application
+#'   \item \strong{expire (optional)} : the date from which the user will no longer have access to the application
+#'   \item \strong{applications (optional)} : the name of the applications to which the user is authorized,
+#'    separated by a semicolon. The name of the application corresponds to the name of the directory,
+#'    or can be declared using : \code{options("shinymanager.application" = "my-app")}
+#'   \item \strong{additional columns} : add others columns to retrieve the values server-side after authentication
+#'  }
+#'
+#' @importFrom DBI dbConnect dbDisconnect dbWriteTable
+#' @importFrom RSQLite SQLite
+#' @importFrom scrypt hashPassword
+#'
+#' @seealso \code{\link{read_db_decrypt}}
+#'
+#' @examples
+#' \dontrun{
+#'
+#' # Credentials data
+#' credentials <- data.frame(
+#'   user = c("shiny", "shinymanager"),
+#'   password = c("azerty", "12345"), # password will automatically be hashed
+#'   stringsAsFactors = FALSE
+#' )
+#'
+#' # you can use keyring package to set database key
+#' library(keyring)
+#' key_set("R-shinymanager-key", "obiwankenobi")
+#'
+#' # Create the database
+#' create_db(
+#'   credentials_data = credentials,
+#'   conn = conn, # You should have already initialized this connection
+#'   passphrase = key_get("R-shinymanager-key", "obiwankenobi")
+#' )
+#'
+#' }
+
+create_db <- function(credentials_data, conn, passphrase = NULL) {
   if (!all(c("user", "password") %in% names(credentials_data))) {
     stop("credentials_data must contains columns: 'user', 'password'", call. = FALSE)
   }
@@ -71,8 +130,7 @@ create_db <- function(credentials_data, sqlite_path, passphrase = NULL) {
   default_col <- c("user", "password", "start", "expire", "admin")
   credentials_data <- credentials_data[, c(default_col,
                                            setdiff(colnames(credentials_data), default_col))]
-  conn <- dbConnect(SQLite(), dbname = sqlite_path)
-  on.exit(dbDisconnect(conn))
+
   credentials_data[] <- lapply(credentials_data, as.character)
 
   write_db_encrypt(
